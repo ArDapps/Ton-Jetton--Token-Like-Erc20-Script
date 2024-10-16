@@ -10,12 +10,12 @@ message MintPublic {
 }
 
 contract SampleJetton with Jetton {
-    totalSupply: Int as coins;
-    owner: Address;
-    content: Cell;
-    mintable: Bool;
-
-    max_supply: Int as coins; 
+    // المتغيرات الحالة
+    totalSupply: Int as coins; // إجمالي العرض لرموز الجيتون
+    owner: Address;            // عنوان مالك العقد
+    content: Cell;             // محتوى البيانات الوصفية للجيتون
+    mintable: Bool;            // مؤشر يحدد ما إذا كان مسموحًا بالسك
+    max_supply: Int as coins;  // الحد الأقصى للعرض لرموز الجيتون
 
     init(owner: Address, content: Cell, max_supply: Int) {
         self.totalSupply = 0;
@@ -23,25 +23,28 @@ contract SampleJetton with Jetton {
         self.mintable = true;
         self.content = content;
 
-        self.max_supply = max_supply; // Initial Setting for max_supply
+        self.max_supply = max_supply; // تحديد القيمة الأولية للعرض الأقصى
     }
 
+    // وظيفة الاستقبال لسك الرموز من قبل المالك
     receive(msg: Mint) {
         let ctx: Context = context();
-        require(ctx.sender == self.owner, "Not Owner");
-        require(self.mintable, "Can't Mint Anymore");
-        self.mint(msg.receiver, msg.amount, self.owner); // (to, amount, response_destination)
+        require(ctx.sender == self.owner, "ليس المالك");
+        require(self.mintable, "لم يعد بالإمكان السك");
+        self.mint(msg.receiver, msg.amount, self.owner); // (إلى، الكمية، وجهة الاستجابة)
     }
 
-    receive(msg: MintPublic) { // Public Minting
+    // وظيفة الاستقبال للسك العام
+    receive(msg: MintPublic) { // سك عام
         let ctx: Context = context();
-        require(self.mintable, "Can't Mint Anymore");
+        require(self.mintable, "لم يعد بالإمكان السك");
         self.mint(ctx.sender, msg.amount, self.owner);
     }
 
+    // وظيفة الاستقبال لإغلاق عملية السك من قبل المالك
     receive("Owner: MintClose") {
         let ctx: Context = context();
-        require(ctx.sender == self.owner, "Not Owner");
+        require(ctx.sender == self.owner, "ليس المالك");
         self.mintable = false;
     }
 } 
@@ -58,23 +61,24 @@ struct JettonData {
 @interface("org.ton.jetton.master")
 trait Jetton with Ownable {
 
-    totalSupply: Int; // Already set initially 
-    mintable: Bool;
-    owner: Address;
-    content: Cell;
+    // المتغيرات الحالة
+    totalSupply: Int; // إجمالي العرض لرموز الجيتون
+    mintable: Bool;   // مؤشر يحدد ما إذا كان مسموحًا بالسك
+    owner: Address;   // عنوان مالك العقد
+    content: Cell;    // محتوى البيانات الوصفية للجيتون
 
-    max_supply: Int; // This is not in the TEP-74 interface
+    max_supply: Int; // الحد الأقصى للعرض لرموز الجيتون (غير موجود في واجهة TEP-74)
 
     receive(msg: TokenUpdateContent) {
-        self.requireOwner();                // Allow changing content only by owner
-        self.content = msg.content;         // Update content
+        self.requireOwner();                // السماح بتغيير المحتوى فقط من قبل المالك
+        self.content = msg.content;         // تحديث المحتوى
     }
 
     receive(msg: TokenBurnNotification) {
-        self.requireWallet(msg.owner);                     // Check wallet
-        self.totalSupply = self.totalSupply - msg.amount; // Update supply
+        self.requireWallet(msg.owner);                    // التحقق من أن المرسل محفظة صالحة
+        self.totalSupply = self.totalSupply - msg.amount; // تحديث إجمالي العرض
 
-        if (msg.response_destination != null) { // Cashback
+        if (msg.response_destination != null) { // إعادة الرموز الزائدة
             send(SendParameters{
                 to: msg.response_destination!!, 
                 value: 0,
@@ -87,14 +91,16 @@ trait Jetton with Ownable {
         }
     }
 
-    // @to The Address receive the Jetton token after minting
-    // @amount The amount of Jetton token being minted
-    // @response_destination The previous owner address
+    // وظيفة السك لإنشاء رموز جديدة
+    // @to العنوان الذي سيتلقى رموز الجيتون بعد السك
+    // @amount كمية رموز الجيتون التي سيتم سكها
+    // @response_destination العنوان الذي سيتم إرسال الاستجابة إليه
     fun mint(to: Address, amount: Int, response_destination: Address) {
-        require(self.totalSupply + amount <= self.max_supply, "The total supply will be overlapping.");
-        self.totalSupply = self.totalSupply + amount; // Update total supply
+        // التأكد من أن إجمالي العرض لا يتجاوز الحد الأقصى للعرض
+        require(self.totalSupply + amount <= self.max_supply, "إجمالي العرض سيتجاوز الحد الأقصى.");
+        self.totalSupply = self.totalSupply + amount; // تحديث إجمالي العرض
 
-        let winit: StateInit = self.getJettonWalletInit(to); // Create message
+        let winit: StateInit = self.getJettonWalletInit(to); // إنشاء تهيئة المحفظة
         send(SendParameters{
             to: contractAddress(winit), 
             value: 0, 
@@ -113,17 +119,19 @@ trait Jetton with Ownable {
         });
     }
 
+    // وظيفة للتأكد من أن المرسل محفظة صالحة
     fun requireWallet(owner: Address) {
         let ctx: Context = context();
         let winit: StateInit = self.getJettonWalletInit(owner);
-        require(contractAddress(winit) == ctx.sender, "Invalid sender");
+        require(contractAddress(winit) == ctx.sender, "مرسل غير صالح");
     }
 
     virtual fun getJettonWalletInit(address: Address): StateInit {
         return initOf JettonDefaultWallet(myAddress(), address);
     }
 
-    // ====== Get Methods ====== //
+    // ====== وظائف الحصول على البيانات ====== //
+    // الحصول على بيانات الجيتون
     get fun get_jetton_data(): JettonData {
         let code: Cell = self.getJettonWalletInit(myAddress()).code;
         return JettonData{ 
@@ -135,6 +143,7 @@ trait Jetton with Ownable {
         };
     }
 
+    // الحصول على عنوان المحفظة لمالك معين
     get fun get_wallet_address(owner: Address): Address {
         let winit: StateInit = self.getJettonWalletInit(owner);
         return contractAddress(winit);
@@ -143,12 +152,14 @@ trait Jetton with Ownable {
 // ============================================================ //
 @interface("org.ton.jetton.wallet")
 contract JettonDefaultWallet {
-    const minTonsForStorage: Int = ton("0.01");
-    const gasConsumption: Int = ton("0.01");
+    // الثوابت
+    const minTonsForStorage: Int = ton("0.01");  // الحد الأدنى من التون المطلوبة للتخزين
+    const gasConsumption: Int = ton("0.01");     // استهلاك الغاز لكل عملية
 
-    balance: Int;
-    owner: Address;
-    master: Address;
+    // المتغيرات الحالة
+    balance: Int;       // رصيد رموز الجيتون في المحفظة
+    owner: Address;     // مالك المحفظة
+    master: Address;    // عنوان عقد الجيتون الرئيسي
 
     init(master: Address, owner: Address) {
         self.balance = 0;
@@ -156,19 +167,21 @@ contract JettonDefaultWallet {
         self.master = master;
     }
 
+    // وظيفة الاستقبال لمعالجة تحويل الرموز
     receive(msg: TokenTransfer) { // 0xf8a7ea5
-        let ctx: Context = context(); // Check sender
-        require(ctx.sender == self.owner, "Invalid sender");
+        let ctx: Context = context(); // التحقق من المرسل
+        require(ctx.sender == self.owner, "مرسل غير صالح");
 
-        // Gas checks
+        // فحوصات الغاز
         let fwdFee: Int = ctx.readForwardFee() + ctx.readForwardFee();  
         let final: Int =  2 * self.gasConsumption + self.minTonsForStorage + fwdFee;
-        require(ctx.value > min(final, ton("0.01")), "Invalid value!!"); 
+        require(ctx.value > min(final, ton("0.01")), "قيمة غير صالحة!!"); 
 
-        // Update balance
+        // تحديث الرصيد
         self.balance = self.balance - msg.amount; 
-        require(self.balance >= 0, "Invalid balance");
+        require(self.balance >= 0, "رصيد غير صالح");
 
+        // التحضير لإرسال الرموز إلى الوجهة
         let init: StateInit = initOf JettonDefaultWallet(self.master, msg.destination);  
         let walletAddress: Address = contractAddress(init);
         send(SendParameters{
@@ -189,24 +202,25 @@ contract JettonDefaultWallet {
             });
     }
 
+    // وظيفة الاستقبال لمعالجة التحويلات الداخلية للرموز
     receive(msg: TokenTransferInternal) { // 0x178d4519
         let ctx: Context = context();
 
         if (ctx.sender != self.master) {
             let sinit: StateInit = initOf JettonDefaultWallet(self.master, msg.from);
-            require(contractAddress(sinit) == ctx.sender, "Invalid sender!");
+            require(contractAddress(sinit) == ctx.sender, "مرسل غير صالح!");
         }
 
-        // Update balance
+        // تحديث الرصيد
         self.balance = self.balance + msg.amount;
-        require(self.balance >= 0, "Invalid balance"); 
+        require(self.balance >= 0, "رصيد غير صالح"); 
         
-        // Get value for gas
+        // الحصول على القيمة للغاز
         let msgValue: Int = self.msgValue(ctx.value);  
         let fwdFee: Int = ctx.readForwardFee();
         msgValue = msgValue - msg.forward_ton_amount - fwdFee;
         
-         // 0x7362d09c - notify the new owner of JettonToken that the transfer is complete
+        // إشعار المالك بالتحويل
         if (msg.forward_ton_amount > 0) { 
             send(SendParameters{
                 to: self.owner,
@@ -222,7 +236,7 @@ contract JettonDefaultWallet {
             });
         }
 
-        // 0xd53276db -- Cashback to the original Sender
+        // إرسال الأموال الزائدة إلى وجهة الاستجابة
         if (msg.response_destination != null) { 
             send(SendParameters {
                 to: msg.response_destination, 
@@ -236,17 +250,18 @@ contract JettonDefaultWallet {
         }
     }
 
+    // وظيفة الاستقبال لمعالجة حرق الرموز
     receive(msg: TokenBurn) {
         let ctx: Context = context();
-        require(ctx.sender == self.owner, "Invalid sender");  // Check sender
+        require(ctx.sender == self.owner, "مرسل غير صالح");  // التحقق من المرسل
 
-        self.balance = self.balance - msg.amount; // Update balance
-        require(self.balance >= 0, "Invalid balance");
+        self.balance = self.balance - msg.amount; // تحديث الرصيد
+        require(self.balance >= 0, "رصيد غير صالح");
 
-        let fwdFee: Int = ctx.readForwardFee(); // Gas checks
-        require(ctx.value > fwdFee + 2 * self.gasConsumption + self.minTonsForStorage, "Invalid value - Burn");
+        let fwdFee: Int = ctx.readForwardFee(); // فحوصات الغاز
+        require(ctx.value > fwdFee + 2 * self.gasConsumption + self.minTonsForStorage, "قيمة غير صالحة - حرق");
 
-        // Burn tokens
+        // إشعار العقد الرئيسي بالحرق
         send(SendParameters{  
             to: self.master,
             value: 0,
@@ -261,6 +276,7 @@ contract JettonDefaultWallet {
         });
     }
 
+    // وظيفة لحساب قيمة الرسالة بعد خصم رسوم الغاز والتخزين
     get fun msgValue(value: Int): Int {
         let msgValue: Int = value;
         let tonBalanceBeforeMsg: Int = myBalance() - msgValue;
@@ -269,6 +285,7 @@ contract JettonDefaultWallet {
         return msgValue;
     }
 
+    // معالجات الارتداد لاسترداد الرموز في حالة فشل التحويلات
     bounced(src: bounced<TokenTransferInternal>) {
         self.balance = self.balance + src.amount;
     }
@@ -277,6 +294,7 @@ contract JettonDefaultWallet {
         self.balance = self.balance + src.amount;
     }
 
+    // وظيفة للحصول على بيانات المحفظة
     get fun get_wallet_data(): JettonWalletData {
         return JettonWalletData{
             balance: self.balance,
@@ -288,10 +306,10 @@ contract JettonDefaultWallet {
 }
 
 struct JettonWalletData {
-    balance: Int;
-    owner: Address;
-    master: Address;
-    walletCode: Cell;
+    balance: Int;       // رصيد رموز الجيتون في المحفظة
+    owner: Address;     // مالك المحفظة
+    master: Address;    // عنوان عقد الجيتون الرئيسي
+    walletCode: Cell;   // خلية كود عقد المحفظة
 }
 
 message(0xf8a7ea5) TokenTransfer {
@@ -301,7 +319,7 @@ message(0xf8a7ea5) TokenTransfer {
     response_destination: Address;
     custom_payload: Cell?;
     forward_ton_amount: Int as coins;
-    forward_payload: Slice as remaining; // Comment Text message when Transfer the jetton
+    forward_payload: Slice as remaining; // نص التعليق عند تحويل الجيتون
 }
 
 message(0x178d4519) TokenTransferInternal {
@@ -310,14 +328,14 @@ message(0x178d4519) TokenTransferInternal {
     from: Address;
     response_destination: Address;
     forward_ton_amount: Int as coins;
-    forward_payload: Slice as remaining; // Comment Text message when Transfer the jetton
+    forward_payload: Slice as remaining; // نص التعليق عند تحويل الجيتون
 }
 
 message(0x7362d09c) TokenNotification {
     queryId: Int as uint64;
     amount: Int as coins;
     from: Address;
-    forward_payload: Slice as remaining; // Comment Text message when Transfer the jetton 
+    forward_payload: Slice as remaining; // نص التعليق عند تحويل الجيتون 
 }
 
 message(0x595f07bc) TokenBurn {
