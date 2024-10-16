@@ -1,7 +1,9 @@
-## npm install
+## To run application
 
-## npx blueprint build
+### npm install
 
-## npx blueprint run
+### npx blueprint build
 
-## Thanks For https://www.youtube.com/@NikandrSurkov
+### npx blueprint run
+
+Thanks For https://www.youtube.com/@NikandrSurkov
